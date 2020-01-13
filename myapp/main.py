@@ -26,11 +26,11 @@ table_info = get_table_info(spectra_df, spectra_mf, mf_df, mf_bgc, bgc_df, bgc_g
 
 spectra_ds.selected.js_on_change('indices', CustomJS(args=dict(spectra_ds=spectra_ds, mf_ds=mf_ds, bgc_ds=bgc_ds,
                                                                gcf_ds=gcf_ds), code="""
-    console.log(window.linker);
+    console.log(window.shared);
     var spectra_indices = cb_obj.indices;
-    var mf_indices = [];
-    var bgc_indices = [];
-    var gcf_indices = [];
+    var mf_data = [];
+    var bgc_data = [];
+    var gcf_data = [];
 
     for (var i = 0; i < spectra_indices.length; i++) {
         var idx = spectra_indices[i];
@@ -63,10 +63,11 @@ alert_div = Div(text="", name='alert_div')
 widgets.append(alert_div)
 
 load_button = Button(label='Load Data')
-load_button.callback = CustomJS(args=dict(table_info=table_info), code="""
-    // window.linker defined in main.js
-    window.linker['tableInfo'] = table_info;
-    console.log('Linker initialised');
+load_button.callback = CustomJS(args=dict(tableInfo=table_info), code="""
+    // create a linker object and put it into window, so it can be used in other callbacks
+    // window.shared defined in main.js
+    const linker = new Linker(tableInfo);
+    window.shared['linker'] = linker;
 """)
 widgets.append(load_button)
 

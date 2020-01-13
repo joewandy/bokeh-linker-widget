@@ -65,8 +65,8 @@ def create_links(df1, df2, key1, key2, indices):
 def get_table_info(spectra_df, spectra_mf, mf_df, mf_bgc, bgc_df, bgc_gcf, gcf_df):
     tables_info = [
         {
-            'table_name': 'spectra_table',
-            'table_data': spectra_df.to_dict('records'),
+            'tableName': 'spectra_table',
+            'tableData': spectra_df.to_dict('records'),
             'options': {
                 'visible': True,
                 'pk': 'spectra_pk'
@@ -82,8 +82,8 @@ def get_table_info(spectra_df, spectra_mf, mf_df, mf_bgc, bgc_df, bgc_gcf, gcf_d
             'relationship': {'with': 'mf_table', 'using': 'mf_pk'}
         },
         {
-            'table_name': 'mf_table',
-            'table_data': mf_df.to_dict('records'),
+            'tableName': 'mf_table',
+            'tableData': mf_df.to_dict('records'),
             'options': {
                 'visible': True,
                 'pk': 'mf_pk'
@@ -99,8 +99,8 @@ def get_table_info(spectra_df, spectra_mf, mf_df, mf_bgc, bgc_df, bgc_gcf, gcf_d
             'relationship': {'with': 'bgc_table', 'using': 'bgc_pk'}
         },
         {
-            'table_name': 'bgc_table',
-            'table_data': bgc_df.to_dict('records'),
+            'tableName': 'bgc_table',
+            'tableData': bgc_df.to_dict('records'),
             'options': {
                 'visible': True,
                 'pk': 'bgc_pk'
@@ -116,8 +116,8 @@ def get_table_info(spectra_df, spectra_mf, mf_df, mf_bgc, bgc_df, bgc_gcf, gcf_d
             'relationship': {'with': 'gcf_table', 'using': 'bgc_pk'}
         },
         {
-            'table_name': 'gcf_table',
-            'table_data': gcf_df.to_dict('records'),
+            'tableName': 'gcf_table',
+            'tableData': gcf_df.to_dict('records'),
             'options': {
                 'visible': True,
                 'pk': 'gcf_pk'
