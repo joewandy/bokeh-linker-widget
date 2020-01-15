@@ -2,21 +2,25 @@ import numpy as np
 import pandas as pd
 from bokeh.models import ColumnDataSource
 from bokeh.models.widgets import DataTable, TableColumn
+from natsort import natsorted, index_natsorted, order_by_index
 
 NA = '-'
 
 
 def get_data(label, max_items):
+    # generate some random data
     items = ['%s_%d' % (label, i) for i in list(range(max_items))]
     x1 = np.random.randint(low=1, high=100, size=max_items).tolist()
     x2 = np.random.randint(low=1, high=100, size=max_items).tolist()
     x3 = np.random.randint(low=1, high=100, size=max_items).tolist()
 
+    # insert NAs to the first row
     items.insert(0, NA)
     x1.insert(0, NA)
     x2.insert(0, NA)
     x3.insert(0, NA)
 
+    # create pandas dataframe
     colname = '%s_pk' % label
     data = {
         colname: items,
@@ -24,13 +28,18 @@ def get_data(label, max_items):
         'x2': x2,
         'x3': x3
     }
+    df = pd.DataFrame(data)
+
+    # https://stackoverflow.com/questions/29580978/naturally-sorting-pandas-dataframe
+    df = df.reindex(index=order_by_index(df.index, index_natsorted(df[colname])))
+
+    # create bokeh ColumnDataSource and DataTable
     columns = [
         TableColumn(field=colname, title='ID'),
         TableColumn(field='x1', title='x1'),
         TableColumn(field='x2', title='x2'),
         TableColumn(field='x3', title='x3'),
     ]
-    df = pd.DataFrame(data)
     ds = ColumnDataSource(df)
     dt = DataTable(source=ds, columns=columns, width=300, height=300)
     return df, ds, dt
@@ -43,21 +52,30 @@ def create_links(df1, df2, key1, key2, indices):
     for idx, row in df1.iterrows():
         val1 = row[key1]
         val2 = NA
-        link = {key1: val1, key2: val2}
-        links.append(link)
+        if val1 != NA:
+            link = {key1: val1, key2: val2}
+            # print(1, link)
+            links.append(link)
 
     # link everything on df2 to NA
     for idx, row in df2.iterrows():
         val1 = NA
         val2 = row[key2]
-        link = {key1: val1, key2: val2}
-        links.append(link)
+        if val2 != NA:
+            link = {key1: val1, key2: val2}
+            # print(2, link)
+            links.append(link)
+
+    # finally link NA to NA
+    link = {key1: NA, key2: NA}
+    links.append(link)
 
     # link entries in df1 and df2 to each other according to their indices
     for idx1, idx2 in indices:
         val1 = df1.loc[idx1][key1]
         val2 = df2.loc[idx2][key2]
         link = {key1: val1, key2: val2}
+        # print(3, idx1, idx2, link)
         links.append(link)
     return links
 
@@ -113,7 +131,7 @@ def get_table_info(spectra_df, spectra_mf, mf_df, mf_bgc, bgc_df, bgc_gcf, gcf_d
             'options': {
                 'visible': False
             },
-            'relationship': {'with': 'gcf_table', 'using': 'bgc_pk'}
+            'relationship': {'with': 'gcf_table', 'using': 'gcf_pk'}
         },
         {
             'tableName': 'gcf_table',

@@ -15,45 +15,45 @@ mf_df, mf_ds, mf_dt = get_data('mf', max_items)
 bgc_df, bgc_ds, bgc_dt = get_data('bgc', max_items)
 gcf_df, gcf_ds, gcf_dt = get_data('gcf', max_items)
 
-# create some example links, 0 is not used because it's NA
-indices = [(1, 1), (1, 2), (1, 3), (1, 4), (2, 2), (2, 3), (3, 3)]
-spectra_mf = create_links(spectra_df, mf_df, 'spectra_pk', 'mf_pk', indices)
-mf_bgc = create_links(mf_df, bgc_df, 'mf_pk', 'bgc_pk', indices)
-bgc_gcf = create_links(bgc_df, gcf_df, 'bgc_pk', 'gcf_pk', indices)
+# create some example links
+# 0 is not used because it's for NA
+link_indices = [(1, 1), (1, 2), (1, 3), (1, 4), (2, 4), (2, 5), (3, 6)]
+spectra_mf = create_links(spectra_df, mf_df, 'spectra_pk', 'mf_pk', link_indices)
+mf_bgc = create_links(mf_df, bgc_df, 'mf_pk', 'bgc_pk', link_indices)
+bgc_gcf = create_links(bgc_df, gcf_df, 'bgc_pk', 'gcf_pk', link_indices)
 
 # combine the data and link informations into a table info
+# this will be passed to the linker object when the Load button is clicked
 table_info = get_table_info(spectra_df, spectra_mf, mf_df, mf_bgc, bgc_df, bgc_gcf, gcf_df)
+data_sources = {
+    'spectra_table': spectra_ds,
+    'mf_table': mf_ds,
+    'bgc_table': bgc_ds,
+    'gcf_table': gcf_ds
+}
 
-spectra_ds.selected.js_on_change('indices', CustomJS(args=dict(spectra_ds=spectra_ds, mf_ds=mf_ds, bgc_ds=bgc_ds,
-                                                               gcf_ds=gcf_ds), code="""
-    console.log(window.shared);
-    var spectra_indices = cb_obj.indices;
-    var mf_data = [];
-    var bgc_data = [];
-    var gcf_data = [];
-
-    for (var i = 0; i < spectra_indices.length; i++) {
-        var idx = spectra_indices[i];
-        mf_indices.push(idx+1);
-        bgc_indices.push(idx+2);
-        gcf_indices.push(idx+3);            
+# custom JS callback codes to call the linker when a data table is clicked
+code = """    
+    // get linker object    
+    const linker = window.shared['linker'];
+    
+    // set selections       
+    const selected_indices = cb_obj.indices;
+    console.log(table_name, selected_indices);
+    linker.removeConstraints(table_name);
+    for(let i = 0; i < selected_indices.length; i++) {
+        const idx = selected_indices[i];
+        linker.addConstraint(table_name, idx, data_sources[table_name]);        
     }
-    mf_ds.selected.indices = mf_indices;
-    bgc_ds.selected.indices = bgc_indices;
-    gcf_ds.selected.indices = gcf_indices;
-
-    // example to change data
-    // var d1 = s1.data;
-    // var d2 = s2.data;
-    // for (var i = 0; i < inds.length; i++) {
-    //    d2['x'].push(d1['x'][inds[i]]+100)
-    //    d2['y'].push(d1['y'][inds[i]]+100)
-    // }        
-
-    mf_ds.change.emit();
-    bgc_ds.change.emit();
-    gcf_ds.change.emit();
-"""))
+    
+    // query the linker and update data sources with the query result
+    linker.query();
+    linker.updateDataSources(data_sources);    
+"""
+spectra_ds.selected.js_on_change('indices', CustomJS(args={'table_name': 'spectra_table', 'data_sources': data_sources}, code=code))
+mf_ds.selected.js_on_change('indices', CustomJS(args={'table_name': 'mf_table', 'data_sources': data_sources}, code=code))
+bgc_ds.selected.js_on_change('indices', CustomJS(args={'table_name': 'bgc_table', 'data_sources': data_sources}, code=code))
+gcf_ds.selected.js_on_change('indices', CustomJS(args={'table_name': 'gcf_table', 'data_sources': data_sources}, code=code))
 
 ### define widgets and layouts ###
 

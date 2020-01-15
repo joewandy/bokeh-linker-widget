@@ -8,6 +8,7 @@ jupyterlab = "*"
 bokeh = "*"
 numpy = "*"
 pandas = "*"
+natsort = "*"
 
 [dev-packages]
 

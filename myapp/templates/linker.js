@@ -3,9 +3,201 @@ class Linker {
         console.log('Linker initiliasing');
         console.log(tablesInfo);
         this.tablesInfo = tablesInfo;
+
+        // precompute stuff that won't change
+        this.defaultConstraints = this.getDefaultConstraints();
+        this.fieldNames = this.getFieldNames();
+        this.tableIdToIdColumnMap = this.getTableIdToIdColumnMap();
+
+        // selections will change depending on what the user has chosen on screen
+        this.selections = this.emptySelections();
+        this.numSelected = this.countNumSelected();
+        this.totalSelected = this.getTotalSelected()
+        this.queryResult = null;
         this.sqlManager = new SqlManager(this.tablesInfo);
         console.log('Linker initiliased');
     }
+
+    getDefaultConstraints() {
+        return getConstraintTablesConstraintKeyName(this.tablesInfo)
+            .reduce((constraints, tableInfo) => {
+                constraints[tableInfo['tableName']] = this.getKeys(
+                    this.tablesInfo, tableInfo['tableName'], tableInfo['constraintKeyName']);
+                return constraints;
+            }, {});
+    }
+
+    getFieldNames() {
+        // Gets the field names for each visible table
+        return this.tablesInfo
+            .filter(isTableVisible)
+            .map(tableInfo => ({
+                'tableName': tableInfo['tableName'],
+                'fieldNames': Object.keys(tableInfo['tableData'][0])
+            }));
+    }
+
+    getTableIdToIdColumnMap() {
+        // Get the table name and key used in the WHERE clause in the form tableName: key
+        return getConstraintTablesConstraintKeyName(this.tablesInfo)
+            .map(t => ({[t['tableName']]: t['constraintKeyName']}))
+            .reduce((o, v) => Object.assign(o, v), {});
+    }
+
+    getKeys(tablesInfo, tableName, k) {
+        // Gets the values of the key used in the table relationship for the SQL IN clause
+        const data = tablesInfo
+            .filter(isTableVisible)
+            .filter(t => t['tableName'] === tableName)
+            .map(t => t['tableData'])[0];
+
+        const keys = data
+            .map(d => d[k])
+            .filter((k, idx, arr) => arr.indexOf(k) === idx);
+
+        return keys;
+    }
+
+    getId(tableName, rowObject) {
+        return rowObject[idColumn];
+    }
+
+    countNumSelected() {
+        return getConstraintTablesConstraintKeyName(this.tablesInfo)
+            .reduce((results, tableInfo) => {
+                const tname = tableInfo['tableName'];
+                results[tname] = this.selections[tname].length;
+                return results;
+            }, {});
+    }
+
+    getTotalSelected() {
+        const values = Object.values(this.numSelected);
+        const total = values.reduce((a, b) => a + b, 0);
+        return total;
+    }
+
+    emptySelections() {
+        return getConstraintTablesConstraintKeyName(this.tablesInfo)
+            .reduce((results, tableInfo) => {
+                const tname = tableInfo['tableName'];
+                results[tname] = [];
+                return results;
+            }, {});
+    }
+
+    query() {
+        // console.trace('query');
+
+        // get alasql query result
+        const constraints = this.makeConstraints();
+        const resultset = this.sqlManager.queryDatabase(this.tablesInfo, constraints);
+
+        // get results for each table
+        const fieldNames = this.fieldNames;
+        const tableData = {};
+        for (let i = 0; i < fieldNames.length; i++) {
+            const tableFieldNames = fieldNames[i];
+            const tableName = tableFieldNames['tableName'];
+            const data = this.sqlManager.prefixQuery(tableFieldNames, resultset);
+            tableData[tableName] = data;
+        }
+        this.queryResult = tableData;
+    }
+
+    addConstraint(tableName, rowIndex, dataSource) {
+        const idColumn = this.tableIdToIdColumnMap[tableName];
+        const idVal = dataSource.data[idColumn][rowIndex]
+        this.selections[tableName].push({
+            idVal: idVal,
+            rowIndex: rowIndex,
+        });
+        this.numSelected = this.countNumSelected();
+        this.totalSelected = this.getTotalSelected();
+    }
+
+    removeConstraints(tableName) {
+        this.selections[tableName] = [];
+        this.numSelected = this.countNumSelected();
+        this.totalSelected = this.getTotalSelected();
+    }
+
+    makeConstraints() {
+        return getConstraintTablesConstraintKeyName(this.tablesInfo)
+            .reduce((results, tableInfo) => {
+                const tname = tableInfo['tableName'];
+                results[tname] = this.selectionToConstraint(tname);
+                return results;
+            }, {});
+    }
+
+    selectionToConstraint(tableName) {
+        if (this.numSelected[tableName] == 0) {
+            return this.defaultConstraints[tableName];
+        } else {
+            return this.selections[tableName].map(x => x.idVal);
+        }
+    }
+
+    updateDataSources(dataSources) {
+        if (this.totalSelected > 0) {
+            const fieldNames = this.fieldNames;
+            const queryResult = this.queryResult;
+            for (let i = 0; i < fieldNames.length; i++) { // update all the tables
+                const tableFieldName = fieldNames[i];
+                const tableName = tableFieldName['tableName'];
+                if (this.numSelected[tableName] == 0) { // if table has no selection
+                    // update table content
+                    const dataSource = dataSources[tableName];
+                    this.updateSingleTable(tableName, queryResult, dataSource);
+                }
+            }
+
+        } else {
+            this.resetTables(dataSources);
+        }
+    }
+
+    updateSingleTable(tableName, queryResult, dataSource) {
+        const newData = {};
+        const tableQueryResult = queryResult[tableName]
+
+        // natural sort in-place by id column
+        // https://stackoverflow.com/questions/2802341/javascript-natural-sort-of-alphanumerical-strings
+        const idColumn = this.tableIdToIdColumnMap[tableName];
+        const collator = new Intl.Collator(undefined, {numeric: true, sensitivity: 'base'});
+        tableQueryResult.sort((a, b) => collator.compare(a[idColumn], b[idColumn]));
+
+        // convert from an array of objects to column data
+        queryResult[tableName].forEach(function (row, i) {
+            for (let prop in row) {
+                if (row.hasOwnProperty(prop)) {
+                    const value = row[prop];
+                    if (!newData.hasOwnProperty(prop)) {
+                        newData[prop] = []
+                    }
+                    newData[prop].push(value);
+                }
+            }
+        })
+
+        dataSource.data = newData;
+        dataSource.change.emit();
+    }
+
+    resetTables(dataSources) {
+        const fieldNames = this.fieldNames;
+        const queryResult = this.queryResult;
+        for (let i = 0; i < fieldNames.length; i++) { // update all the tables
+            const tableFieldName = fieldNames[i];
+            const tableName = tableFieldName['tableName'];
+            const dataSource = dataSources[tableName];
+            this.updateSingleTable(tableName, queryResult, dataSource);
+        }
+    }
+
+
+
 }
 
 const isTableVisible = tableInfo => tableInfo["options"]["visible"];
@@ -143,14 +335,14 @@ class SqlManager {
             .map(t => JSON.parse(t));
     }
 
-    makeSQLquery(tablesInfo, skipConstraints, whereType) {
+    makeSQLquery(tablesInfo, skipConstraints) {
         const selectClause = this.makeSelectClause(tablesInfo);
         const innerJoinClause = this.makeInnerJoinClause();
-        const whereClause = this.makeWhereClause(tablesInfo, skipConstraints, whereType);
+        const whereClause = this.makeWhereClause(tablesInfo, skipConstraints);
         return [selectClause, innerJoinClause, whereClause].join(" ");
     }
 
-    makeWhereClause(tablesInfo, skipConstraints, whereType) {
+    makeWhereClause(tablesInfo, skipConstraints) {
         // add WHERE condition based on selected pks
         const whereSubClauses = this.makeWhereSubClauses();
         let selectedWhereSubClauses = [];
@@ -160,65 +352,12 @@ class SqlManager {
             }
         });
 
-        // add WHERE condition based on query builder for significant items
-        // const whereSubClauses2 = this.constraintTableConstraintKeyNames
-        //     .map(t => t['tableName'] + "." + whereType + "=TRUE").join(" OR ");
-        let whereSubClauses2 = null;
-        if (whereType) {
-            // padjRules: the selected column is significant (above > 0.05)
-            const padjOperators = ['less_or_equal'];
-            const padjRules = whereType.rules.filter(rule => rule.type === 'double' && padjOperators.includes(rule.operator));
-
-            // fcRules: the selected column has a fold change value in the range
-            const fcOperators = ['less_or_equal', 'greater_or_equal', 'between', 'not_between'];
-            const fcRules = whereType.rules.filter(rule => rule.type === 'double' && fcOperators.includes(rule.operator));
-
-            // convert rules to SQL conditions
-            const padjConditions = padjRules.map(rule => {
-                if (rule.operator === 'less_or_equal') {
-                    return `${rule.id} <= ${rule.value}`;
-                }
-                return '';
-            });
-
-            const fcConditions = fcRules.map(rule => {
-                if (rule.operator === 'less_or_equal') {
-                    return `${rule.id} <= ${rule.value}`;
-                } else if (rule.operator === 'greater_or_equal') {
-                    return `${rule.id} >= ${rule.value}`;
-                } else if (rule.operator === 'between') {
-                    return `${rule.id} BETWEEN ${rule.value[0]} AND ${rule.value[1]}`;
-                } else if (rule.operator === 'not_between') {
-                    return `${rule.id} NOT BETWEEN ${rule.value[0]} AND ${rule.value[1]}`;
-                }
-                return '';
-            });
-
-            // generate the SQL statement
-            if (padjRules.length > 0 && fcRules.length > 0) { // both
-                whereSubClauses2 = padjConditions.join(' AND ') + ' AND ' + fcConditions.join(' AND ');
-            } else if (padjRules.length > 0) { // only padj
-                whereSubClauses2 = padjConditions.join(' AND ');
-            } else if (fcRules.length > 0) { // only FC
-                whereSubClauses2 = fcConditions.join(' AND ');
-            }
-
-        }
-
         // combine whereSubClauses1 and whereSubClauses2
         if (selectedWhereSubClauses.length > 0) {
             const whereSubClauses1 = selectedWhereSubClauses.join(' AND ');
-            if (whereType) {
-                return 'WHERE (' + whereSubClauses1 + ') AND (' + whereSubClauses2 + ')';
-            } else {
-                return 'WHERE ' + whereSubClauses1;
-            }
+            return 'WHERE ' + whereSubClauses1;
         } else {
-            if (whereType) {
-                return 'WHERE ' + whereSubClauses2;
-            } else {
-                return '';
-            }
+            return '';
         }
     }
 
@@ -227,25 +366,7 @@ class SqlManager {
             .map(t => t['tableName'] + "." + t['constraintKeyName'])
     }
 
-    makeSignificantFilterSQLquery(tablesInfo, whereType) {
-        const selectClause = this.makeSelectClause(tablesInfo);
-        const innerJoinClause = this.makeInnerJoinClause();
-        const whereClause = this.makeSignificantWhereClause(tablesInfo, whereType);
-        return [selectClause, innerJoinClause, whereClause].join(" ");
-    }
-
-    makeSignificantWhereClause(tablesInfo, whereType) {
-        if (whereType) {
-            const whereSubClauses = this.constraintTableConstraintKeyNames
-                .map(t => t['tableName'] + "." + whereType + "=TRUE");
-            const whereClauses = "WHERE " + whereSubClauses.join(" OR ");
-            return whereClauses;
-        } else {
-            return "";
-        }
-    }
-
-    queryDatabase(tablesInfo, constraints, whereType) {
+    queryDatabase(tablesInfo, constraints) {
 
         const constraintTableNames = this.constraintTableConstraintKeyNames.map(t => t['tableName']);
         const unpackedConstraints = constraintTableNames.map(n => constraints[n]);
@@ -269,7 +390,7 @@ class SqlManager {
             // console.log('%d. skip %s (%s)', i, sc, uc);
         });
 
-        const sqlQuery = this.makeSQLquery(tablesInfo, skipConstraints, whereType);
+        const sqlQuery = this.makeSQLquery(tablesInfo, skipConstraints);
         console.log(sqlQuery);
         const compiledSQLQuery = alasql.compile(sqlQuery);
 
