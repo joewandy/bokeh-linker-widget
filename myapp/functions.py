@@ -9,7 +9,7 @@ NA = '-'
 
 def get_data(label, max_items):
     # generate some random data
-    items = ['%s_%d' % (label, i) for i in list(range(max_items))]
+    items = ['%s_%d' % (label, i+1) for i in list(range(max_items))]
     x1 = np.random.randint(low=1, high=100, size=max_items).tolist()
     x2 = np.random.randint(low=1, high=100, size=max_items).tolist()
     x3 = np.random.randint(low=1, high=100, size=max_items).tolist()
@@ -48,57 +48,45 @@ def get_data(label, max_items):
 def create_links(df1, df2, key1, key2, indices):
     links = []
 
-    # link everything on df1 to NA
-    for idx, row in df1.iterrows():
-        val1 = row[key1]
+    # link entries in df1 and df2 to each other according to their indices
+    for idx1, idx2 in indices:
+        val1 = df1.loc[idx1][key1]
+        val2 = df2.loc[idx2][key2]
+        link = {key1: val1, key2: val2}
+        links.append(link)
+
+    # make sure that there are no unlinked items
+    # for items where no linking has been specified, we just link them to NA
+    linked_1 = set([x[0] for x in indices])
+    linked_2 = set([x[1] for x in indices])
+    unlinked_1 = set(df1.index.tolist()) - linked_1
+    unlinked_2 = set(df2.index.tolist()) - linked_2
+
+    # add the linking for unlinked items in df1 to NA
+    for idx in unlinked_1:
+        val1 = df1.loc[idx][key1]
         val2 = NA
         if val1 != NA:
             link = {key1: val1, key2: val2}
-            # print(1, link)
             links.append(link)
 
-    # link everything on df2 to NA
-    for idx, row in df2.iterrows():
+    # add the linking for unlinked items in df2 to NA
+    for idx in unlinked_2:
         val1 = NA
-        val2 = row[key2]
+        val2 = df2.loc[idx][key2]
         if val2 != NA:
             link = {key1: val1, key2: val2}
-            # print(2, link)
             links.append(link)
 
     # finally link NA to NA
     link = {key1: NA, key2: NA}
     links.append(link)
 
-    # link entries in df1 and df2 to each other according to their indices
-    for idx1, idx2 in indices:
-        val1 = df1.loc[idx1][key1]
-        val2 = df2.loc[idx2][key2]
-        link = {key1: val1, key2: val2}
-        # print(3, idx1, idx2, link)
-        links.append(link)
     return links
 
 
-def get_table_info(spectra_df, spectra_mf, mf_df, mf_bgc, bgc_df, bgc_gcf, gcf_df):
+def get_table_info(mf_df, mf_spectra, spectra_df, spectra_bgc, bgc_df, bgc_gcf, gcf_df):
     tables_info = [
-        {
-            'tableName': 'spectra_table',
-            'tableData': spectra_df.to_dict('records'),
-            'options': {
-                'visible': True,
-                'pk': 'spectra_pk'
-            },
-            'relationship': {'with': 'spectra_mf', 'using': 'spectra_pk'}
-        },
-        {
-            'tableName': 'spectra_mf',
-            'tableData': spectra_mf,
-            'options': {
-                'visible': False
-            },
-            'relationship': {'with': 'mf_table', 'using': 'mf_pk'}
-        },
         {
             'tableName': 'mf_table',
             'tableData': mf_df.to_dict('records'),
@@ -106,11 +94,28 @@ def get_table_info(spectra_df, spectra_mf, mf_df, mf_bgc, bgc_df, bgc_gcf, gcf_d
                 'visible': True,
                 'pk': 'mf_pk'
             },
-            'relationship': {'with': 'mf_bgc', 'using': 'mf_pk'}
+            'relationship': {'with': 'mf_spectra', 'using': 'mf_pk'}
         },
         {
-            'tableName': 'mf_bgc',
-            'tableData': mf_bgc,
+            'tableName': 'mf_spectra',
+            'tableData': mf_spectra,
+            'options': {
+                'visible': False
+            },
+            'relationship': {'with': 'spectra_table', 'using': 'spectra_pk'}
+        },
+        {
+            'tableName': 'spectra_table',
+            'tableData': spectra_df.to_dict('records'),
+            'options': {
+                'visible': True,
+                'pk': 'spectra_pk'
+            },
+            'relationship': {'with': 'spectra_bgc', 'using': 'spectra_pk'}
+        },
+        {
+            'tableName': 'spectra_bgc',
+            'tableData': spectra_bgc,
             'options': {
                 'visible': False
             },
